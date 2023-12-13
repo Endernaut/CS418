@@ -135,42 +135,119 @@ function fillScreen() {
     }
 }
 
-document.querySelector('#submit').addEventListener('click', event => {
-    const gridsize = Number(document.querySelector('#gridsize').value) || 2
-    const faults = Number(document.querySelector('#faults').value) || 0
-    // TO DO: generate a new gridsize-by-gridsize grid here, then apply faults to it
-    
+function createTerrain(gridsize, faults) {
     terrain = {
         "triangles":
+        [],
+        "attributes":
+        [ // Position
             []
-        , 
-        "attributes": 
-            [
-                []
-            ,
-                []
-            ]
+        , // Color
+            []
+        ]
+    }
+    for (let i = 0; i < (gridsize - 1) * (gridsize-1) * 2; i+= 1) {
+        terrain.triangles.push(i * 3, i * 3 + 1, i * 3 + 2)
+
+        g.attributes[0].push(i, i+1, i+gridsize)
+
+        g.attributes[1].push(0.8, 0.6, 0.4)
     }
 
-    for (let i = 0; i < gridsize - 1; i += 1) {
-        terrain.triangles.push(i, i+1, i + gridsize)
-    }
-
-
-    
-})
+    return terrain
+}
 
 /**
  * Fetches, reads, and compiles GLSL; sets two global variables; and begins
  * the animation
  */
+
 async function setup() {
     window.gl = document.querySelector('canvas').getContext('webgl2')
     const vs = await fetch('vs.glsl').then(res => res.text())
     const fs = await fetch('fs.glsl').then(res => res.text())
     window.program = compile(vs,fs)
     gl.enable(gl.DEPTH_TEST)
-    const terrain = setupGeometry(makeTerrain())
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    document.querySelector('#submit').addEventListener('click', event => {
+        const gridsize = Number(document.querySelector('#gridsize').value) || 2
+        const faults = Number(document.querySelector('#faults').value) || 0
+        // TO DO: generate a new gridsize-by-gridsize grid here, then apply faults to it
+        grid = new Array(gridsize).fill(new Array(gridsize).fill(0))
+        grid_normals = new Array(gridsize).fill(new Array(gridsize).fill(0))
+    
+        // Apply faults
+        for (let fault = 0; fault < faults; fault += 1) {
+            let x = Math.random() * gridsize
+            let y = Math.random() * gridsize
+            let p = new Float32Array(x, y)
+            let theta = Math.random() * Math.PI * 2
+            let normal = new Float32Array(Math.cos(theta), Math.sin(theta), 0)
+            for (let i = 0; i < gridsize; i += 1) {
+                for (let j = 0; j < gridsize; j += 1) {
+                    let vertex = new Int32Array(x, y)
+    
+                    let val = dot(sub(vertex, p), normal)
+    
+                    if (val < 0) {
+                        grid[i][j] -= 0.01
+                    }
+                    else if (val > 0) {
+                        grid[i][j] += 0.01
+                    }
+                }
+            }
+        }
+    
+        // Normalize heights
+        var maxRow = grid.map(function(row) { return Math.max.apply(Math, row)}) 
+        var max = Math.max.apply(null, maxRow)
+    
+        var minRow = grid.map(function(row) { return Math.min.apply(Math, row)}) 
+        var min = Math.min.apply(null, maxRow)
+    
+        for (let i = 0; i < gridsize; i += 1) {
+            for (let j = 0; j < gridsize; j += 1) {
+                grid[i][j] = (grid[i][j] - ((max + min) / 2)) / (max - min)
+            }
+        }
+        
+        // Compute grid-based normals
+        for (let i = 0; i < gridsize; i += 1) {
+            for (let j = 0; j < gridsize; j += 1) {
+                n = -1
+                s = -1
+                e = -1
+                w = -1
+    
+                if (i == 0) {
+                    n = gridsize[i][j]
+                    s = gridsize[i+1][j]
+                } else if (i == gridsize - 1) {
+                    n = gridsize[i-1][j]
+                    s = gridsize[i][j]
+                } else {
+                    n = gridsize[i+1][j]
+                    s = gridsize[i+1][j]
+                }
+    
+                if (j == 0) {
+                    w = gridsize[i][j]
+                    e = gridsize[i][j+1]
+                } else if (j == gridsize - 1) {
+                    e = gridsize[i][j]
+                    w = gridsize[i][j-1]
+                } else {
+                    w = gridsize[i][j-1]
+                    e = gridsize[i][j+1]
+                }
+                grid_normals[i][j] = (n - s) * (w - e)
+            }
+        }
+        
+    })
+    const terrain = setupGeometry(createTerrain(gridsize, faults))
     fillScreen()
     window.addEventListener('resize', fillScreen)
     requestAnimationFrame(tick) // <- ensure this function is called only once, at the end of setup
