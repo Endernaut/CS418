@@ -59,7 +59,27 @@ function tick(milliseconds) {
     requestAnimationFrame(tick) // <- only call this here, nowhere else
 }
 
-
+/**
+ * Sends per-vertex data to the GPU and connects it to a VS input
+ * 
+ * @param data    a 2D array of per-vertex data (e.g. [[x,y,z,w],[x,y,z,w],...])
+ * @param loc     the layout location of the vertex shader's `in` attribute
+ * @param mode    (optional) gl.STATIC_DRAW, gl.DYNAMIC_DRAW, etc
+ * 
+ * @returns the ID of the buffer in GPU memory; useful for changing data later
+ */
+function supplyDataBuffer(data, loc, mode) {
+    if (mode === undefined) mode = gl.STATIC_DRAW
+    
+    const buf = gl.createBuffer()
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+    const f32 = new Float32Array(data.flat())
+    gl.bufferData(gl.ARRAY_BUFFER, f32, mode)
+    gl.vertexAttribPointer(loc, data[0].length, gl.FLOAT, false, 0, 0)
+    gl.enableVertexAttribArray(loc)
+    
+    return buf;
+}
 
 
 const IdentityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1])
@@ -67,15 +87,9 @@ const IdentityMatrix = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1])
 function setupGeometry(geom) {
     var triangleArray = gl.createVertexArray()
     gl.bindVertexArray(triangleArray)
-
     for(let i=0; i<geom.attributes.length; i+=1) {
-        let buf = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf)
-        let f32 = new Float32Array(geom.attributes[i].flat())
-        gl.bufferData(gl.ARRAY_BUFFER, f32, gl.STATIC_DRAW)
-        
-        gl.vertexAttribPointer(i, geom.attributes[i][0].length, gl.FLOAT, false, 0, 0)
-        gl.enableVertexAttribArray(i)
+        let data = geom.attributes[i]
+        supplyDataBuffer(data, i)
     }
 
     var indices = new Uint16Array(geom.triangles.flat())
@@ -90,7 +104,7 @@ function setupGeometry(geom) {
         vao: triangleArray
     }
 }
-
+const EarthTone = new Float32Array([0.8, 0.6, 0.4, 1])
 /**
  * Clears the screen, sends two uniforms to the GPU, and asks the GPU to draw
  * several points. Note that no geometry is provided; the point locations are
@@ -105,18 +119,23 @@ function draw(seconds) {
     gl.bindVertexArray(terrain.vao)
 
     // View
-    let v = m4view([0, 6, 2], [0, 0, 0], [0, 0, 1])
+    let eye = [1,1,1]
+    let v = m4view(eye, [0, 0, 0], [0, 0, 1])
+    let m = m4mul(m4rotZ(seconds /2), m4rotZ(-Math.PI/2))
+
+    let ld = normalize([2,2,2])
+
+    gl.uniform3fv(program.uniforms.lightdir, ld)
+    gl.uniform3fv(program.uniforms.lightcolor, [1,1,1])
+    gl.uniform3fv(program.uniforms.eye, [0,0,1])
+    gl.uniform4fv(program.uniforms.color, EarthTone)
 
     // Perspective
     gl.uniformMatrix4fv(program.uniforms.p, false, p)
+    gl.uniformMatrix4fv(program.uniforms.mv, false, m4mul(v,m))
 
+    gl.drawElements(terrain.mode, terrain.count, terrain.type, 0)
     
-    if (gridsize != 2 && faults != 0) {
-        gl.drawElements(terrain.mode, terrain.count, terrain.type, 0)
-    }
-    
-    
-
 }
 
 /** Resizes the canvas to completely fill the screen */
@@ -137,24 +156,119 @@ function fillScreen() {
 
 function createTerrain(gridsize, faults) {
     terrain = {
+        "attributes": 
+        [
+            [
+                
+            ]
+        ],
         "triangles":
-        [],
-        "attributes":
-        [ // Position
-            []
-        , // Color
-            []
+        [
+
         ]
+        
     }
-    for (let i = 0; i < (gridsize - 1) * (gridsize-1) * 2; i+= 1) {
-        terrain.triangles.push(i * 3, i * 3 + 1, i * 3 + 2)
+    for (let i = 0; i < gridsize * (gridsize - 1) - 1; i+= 1) {
+        // Triangles
+        if ((i+1) % gridsize != 0) {
+            terrain.triangles.push([i, i+1, i+gridsize])
+            terrain.triangles.push([i+1, i+gridsize, i+gridsize+1])
+        }
+    }
+    mx = gridsize - 1
+    for (let row = 0; row < gridsize; row += 1) {
+        for (let col = 0; col < gridsize; col += 1) {
+            terrain.attributes[0].push([2 * row / mx - 1, 2 * col / mx - 1, 0 ])
+        }
+    }
+    let len = terrain.attributes[0].length
+    for (let f = 0; f < faults; f += 1) {
+        let x = Math.random() * 2 - 1
+        let y = Math.random() * 2 - 1
+        let rand_p = new Float32Array([x, y, 0])
+        let theta = Math.random() * Math.PI * 2
+        let normal = new Float32Array([Math.cos(theta), Math.sin(theta), 0])
+        
+        for (let p = 0; p < len; p+=1) {
+            let point = terrain.attributes[0][p]
+            let b = new Float32Array([point[0], point[1], point[2]])
+            if (dot(sub(b, rand_p), normal) > 0) {
+                terrain.attributes[0][p][2] += 0.1
+            } else {
+                terrain.attributes[0][p][2] -= 0.1
+            }
+        }
+    }
 
-        g.attributes[0].push(i, i+1, i+gridsize)
+    // Get max and min height
+    let minh = Infinity
+    let maxh = -Infinity
+    
+    for (let v = 0; v < len; v += 1) {
+        let h = terrain.attributes[0][v][2]
+        if (h < minh) {
+            minh = h
+        }
+        if (h > maxh) {
+            maxh = h
+        }
+    }
 
-        g.attributes[1].push(0.8, 0.6, 0.4)
+    // Normalize heights
+    for (let v = 0; v < len; v += 1) {
+        terrain.attributes[0][v][2] = (terrain.attributes[0][v][2] - ((maxh + minh) / 2)) / (maxh - minh)
     }
 
     return terrain
+}
+
+// Add normals
+function addNormals(geom) {
+    let ni = geom.attributes.length
+    geom.attributes.push([])
+    let total = geom.attributes[0].length
+    let side = Math.sqrt(total)
+    let g = geom.attributes[0]
+    for(let i = 0; i < total; i+=1) {
+            let n = []
+            let s = []
+            let e = []
+            let w = []
+
+            // Calculate n and s
+            if (i < side) {
+                n = g[i]
+                s = g[i + side]
+                
+            } else if (i >= total - side) {
+                n = g[i - side]
+                s = g[i]
+            } else {
+                n = g[i - side]
+                s = g[i + side]
+            }
+
+            // Calculate e and w
+            if (i % side == 0) {
+                w = g[i]
+                e = g[i+1]
+            } else if ((i + 1) % side == 0) {
+                w = g[i-1]
+                e = g[i]
+            } else {
+                w = g[i-1]
+                e = g[i+1]
+            }
+            let e1 = sub(n, s)
+            let e2 = sub(w, e)
+            let norm = cross(e1,e2)
+            geom.attributes[ni].push(norm)
+        }
+    for(let i = 0; i < geom.attributes[0].length; i+=1) {
+        geom.attributes[ni][i] = normalize(geom.attributes[ni][i])
+    }
+    console.log(geom.attributes[ni])
+    
 }
 
 /**
@@ -162,95 +276,36 @@ function createTerrain(gridsize, faults) {
  * the animation
  */
 
+
+flag = 0
 async function setup() {
-    window.gl = document.querySelector('canvas').getContext('webgl2')
+    window.gl = document.querySelector('canvas').getContext('webgl2',
+        // optional configuration object: see https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/getContext
+        {antialias: false, depth:true, preserveDrawingBuffer:true}
+    )
     const vs = await fetch('vs.glsl').then(res => res.text())
     const fs = await fetch('fs.glsl').then(res => res.text())
     window.program = compile(vs,fs)
     gl.enable(gl.DEPTH_TEST)
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    
     document.querySelector('#submit').addEventListener('click', event => {
         const gridsize = Number(document.querySelector('#gridsize').value) || 2
         const faults = Number(document.querySelector('#faults').value) || 0
-        // TO DO: generate a new gridsize-by-gridsize grid here, then apply faults to it
-        grid = new Array(gridsize).fill(new Array(gridsize).fill(0))
-        grid_normals = new Array(gridsize).fill(new Array(gridsize).fill(0))
-    
-        // Apply faults
-        for (let fault = 0; fault < faults; fault += 1) {
-            let x = Math.random() * gridsize
-            let y = Math.random() * gridsize
-            let p = new Float32Array(x, y)
-            let theta = Math.random() * Math.PI * 2
-            let normal = new Float32Array(Math.cos(theta), Math.sin(theta), 0)
-            for (let i = 0; i < gridsize; i += 1) {
-                for (let j = 0; j < gridsize; j += 1) {
-                    let vertex = new Int32Array(x, y)
-    
-                    let val = dot(sub(vertex, p), normal)
-    
-                    if (val < 0) {
-                        grid[i][j] -= 0.01
-                    }
-                    else if (val > 0) {
-                        grid[i][j] += 0.01
-                    }
-                }
-            }
-        }
-    
-        // Normalize heights
-        var maxRow = grid.map(function(row) { return Math.max.apply(Math, row)}) 
-        var max = Math.max.apply(null, maxRow)
-    
-        var minRow = grid.map(function(row) { return Math.min.apply(Math, row)}) 
-        var min = Math.min.apply(null, maxRow)
-    
-        for (let i = 0; i < gridsize; i += 1) {
-            for (let j = 0; j < gridsize; j += 1) {
-                grid[i][j] = (grid[i][j] - ((max + min) / 2)) / (max - min)
-            }
-        }
-        
-        // Compute grid-based normals
-        for (let i = 0; i < gridsize; i += 1) {
-            for (let j = 0; j < gridsize; j += 1) {
-                n = -1
-                s = -1
-                e = -1
-                w = -1
-    
-                if (i == 0) {
-                    n = gridsize[i][j]
-                    s = gridsize[i+1][j]
-                } else if (i == gridsize - 1) {
-                    n = gridsize[i-1][j]
-                    s = gridsize[i][j]
-                } else {
-                    n = gridsize[i+1][j]
-                    s = gridsize[i+1][j]
-                }
-    
-                if (j == 0) {
-                    w = gridsize[i][j]
-                    e = gridsize[i][j+1]
-                } else if (j == gridsize - 1) {
-                    e = gridsize[i][j]
-                    w = gridsize[i][j-1]
-                } else {
-                    w = gridsize[i][j-1]
-                    e = gridsize[i][j+1]
-                }
-                grid_normals[i][j] = (n - s) * (w - e)
-            }
+        // TO DO: generate a new gridsize-by-gridsize grid here, then apply faults to it   
+        const terrain = createTerrain(gridsize, faults)
+        addNormals(terrain)
+        window.terrain = setupGeometry(terrain)
+        fillScreen()
+        window.addEventListener('resize', fillScreen)
+        if (flag == 0) {
+            requestAnimationFrame(tick) // <- ensure this function is called only once, at the end of setup
+            flag = 1
         }
         
     })
-    const terrain = setupGeometry(createTerrain(gridsize, faults))
-    fillScreen()
-    window.addEventListener('resize', fillScreen)
-    requestAnimationFrame(tick) // <- ensure this function is called only once, at the end of setup
+    
 }
 
 window.addEventListener('load', setup)

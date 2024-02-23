@@ -136,7 +136,7 @@ function draw(seconds) {
     // Deimos
     let deimos = m4mul(m4rotZ(seconds * Math.PI / (4 * 1.9)), m4trans(2.5 * 1.6, 0, 0), m4rotZ(seconds * 4 * Math.PI / 1.4), m4trans(0.35 * 2, 0, 0), m4scale(0.05, 0.05, 0.05))
     gl.uniformMatrix4fv(program.uniforms.mv, false, m4mul(v, deimos))
-    
+    console.log(tetrahedron.mode)
     gl.drawElements(tetrahedron.mode, tetrahedron.count, tetrahedron.type, 0)
     
 

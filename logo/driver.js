@@ -119,7 +119,6 @@ function draw(seconds) {
 
     gl.uniformMatrix4fv(program.uniforms.move, false, move)
     gl.uniformMatrix4fv(program.uniforms.rot, false, rot)
-
     gl.drawElements(geom.mode, geom.count, geom.type, 0)
 }
 

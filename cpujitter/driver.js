@@ -72,20 +72,24 @@ function tick(milliseconds) {
     requestAnimationFrame(tick) // <- only call this here, nowhere else
 }
 
-let buf;
 
+let buffers = []
+let vertices;
 function setupGeometry(geom) {
+    vertices = new Float32Array(geom.attributes[0].flat())
     var triangleArray = gl.createVertexArray()
     gl.bindVertexArray(triangleArray)
 
     for(let i=0; i<geom.attributes.length; i+=1) {
-        buf = gl.createBuffer()
+        let buf = gl.createBuffer()
         gl.bindBuffer(gl.ARRAY_BUFFER, buf)
         let f32 = new Float32Array(geom.attributes[i].flat())
+        console.log(f32)
         gl.bufferData(gl.ARRAY_BUFFER, f32, gl.DYNAMIC_DRAW)
         
         gl.vertexAttribPointer(i, geom.attributes[i][0].length, gl.FLOAT, false, 0, 0)
         gl.enableVertexAttribArray(i)
+        buffers.push(buf)
     }
 
     var indices = new Uint16Array(geom.triangles.flat())
@@ -111,13 +115,22 @@ function setupGeometry(geom) {
 function draw(seconds) {
     gl.clear(gl.COLOR_BUFFER_BIT) 
     gl.useProgram(program)
-    
+
+    for (let f = 0; f < vertices.length; f+=1) {
+        vertices[f] += Math.random() * 0.015 - 0.0075
+    }
     gl.bindVertexArray(geom.vao)
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+    let move = m4trans(0,0,0)
 
-    gl.bufferData
+    for(let i=0; i<buffers.length; i+=1) {
+        buf = buffers[i]
+        console.log(buf)
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW)
+    }
 
+    gl.uniformMatrix4fv(program.uniforms.move, false, move)
     gl.drawElements(geom.mode, geom.count, geom.type, 0)
 }
 

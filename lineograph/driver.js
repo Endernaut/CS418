@@ -95,53 +95,52 @@ function setupGeometry(geom) {
  *
  * @param {Number} seconds - the number of seconds since the animation began
  */
-let position = new Float32Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+
+let m = m4trans(0,0,0)
 
 function draw(seconds) {
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT) 
+    
     gl.useProgram(program)
     
     gl.bindVertexArray(octahedron.vao)
 
-    // View
-    let v = m4view([0, 6, 2], [0, 0, 0], [0, 0, 1])
-
     // Perspective
     gl.uniformMatrix4fv(program.uniforms.p, false, p)
-    
-    let move = m4trans(0,0,0)
+    let v = m4view([5,5, 1], [0,0,0], [0,1,0])
 
     if (keysBeingPressed['q']) {
-        move = m4trans(0, -0.1, 0)
+        let deep = m4trans(-0.01, 0, 0)
+        m = m4mul(deep, m)
     }
     
     if (keysBeingPressed['e']){
-        move = m4trans(0, 0.1, 0)
+        let close = m4trans(0.01, 0, 0)
+        m = m4mul(close, m)
     }
 
     if (keysBeingPressed['a']){
-        move = m4trans(-0.1, 0, 0)
+        let left = m4trans(0, 0, 0.01)
+        m = m4mul(left,m)
     }
 
     if (keysBeingPressed['d']){
-        move = m4trans(0.1, 0, 0)
+        let right = m4trans(0, 0, -0.01)
+        m= m4mul(right, m)
     }
 
     if (keysBeingPressed['w']){
-        move = m4trans(0, 0, 0.1)
+        let top = m4trans(0, 0.01, 0)
+        m = m4mul(top, m)
     }
 
     if (keysBeingPressed['s']){
-        move = m4trans(0, 0, -0.1)
+        let down = m4trans(0, -0.01, 0)
+        m = m4mul(down, m)
     }
-
-    position = add(move, position)
-
+    s = m4mul(m, m4scale(0.25, 0.25, 0.25))
     // Octahedron
-    gl.uniformMatrix4fv(program.uniforms.mv, false, m4mul(v, position))
+    gl.uniformMatrix4fv(program.uniforms.mv, false, m4mul(v, s))
     gl.drawElements(octahedron.mode, octahedron.count, octahedron.type, 0)
-
-    move = m4trans(0,0,0)
 }
 
 /** Resizes the canvas to completely fill the screen */
@@ -156,8 +155,10 @@ function fillScreen() {
     canvas.style.height = ''
     if (window.gl) {
         gl.viewport(0,0, canvas.width, canvas.height)
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT) 
         window.p = m4perspNegZ(0.1, 10, 1.5, canvas.width, canvas.height)
     }
+    
 }
 
 /**
@@ -165,15 +166,13 @@ function fillScreen() {
  * the animation
  */
 async function setup() {
-    window.gl = document.querySelector('canvas').getContext('webgl2', {preserveDrawingBuffer:true})
+    window.gl = document.querySelector('canvas').getContext('webgl2', {preserveDrawingBuffer : true})
     const vs = await fetch('vs.glsl').then(res => res.text())
     const fs = await fetch('fs.glsl').then(res => res.text())
     window.program = compile(vs,fs)
     gl.enable(gl.DEPTH_TEST)
     const octahedron = await fetch('octahedron.json').then(r=>r.json())
     window.octahedron = setupGeometry(octahedron)
-    const tetrahedron = await fetch('tetrahedron.json').then(r=>r.json())
-    window.tetrahedron = setupGeometry(tetrahedron)
     fillScreen()
     window.addEventListener('resize', fillScreen)
     window.keysBeingPressed = {}

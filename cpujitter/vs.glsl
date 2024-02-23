@@ -8,5 +8,5 @@ uniform float seconds;
 out vec4 vColor;
 void main() {
     vColor = color;
-    gl_Position = rot * move * vec4(position.x * 0.1 - 0.75, position.y * 0.1 - 0.75, position.zw) ;
+    gl_Position = move * vec4(position.x * 0.2 - 0.1, position.y * 0.2 - 0.5, position.zw);
 }
